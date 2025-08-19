@@ -21,13 +21,14 @@ local playerWhitelist, teamWhitelist = {}, {}
 local selectedPlayer, selectedTeam = nil, nil
 local saveFileName = "MyWaypoints_V21_Merged.json"
 local espHighlights = {}
-local espColor = Color3.fromRGB(255, 0, 0) -- Default ESP color, can be changed in settings
+local espColor = Color3.fromRGB(255, 0, 0)
 local defaultWalkSpeed = 16
 local defaultJumpPower = 50
 local defaultFlingPower = 15000
 local defaultTpuaPower = 50000
 local tpuaActive = false
 local tpuaLoop = nil
+local isTrackingAllActive = false -- State for the new toggle button
 
 -- =================================================================================
 -- == SECTION 2: CORE UTILITIES (DRAGGING)
@@ -117,7 +118,7 @@ local TpuaButton = Instance.new("TextButton"); TpuaButton.Name = "TpuaButton"; T
 local TpuaPowerInput = Instance.new("TextBox"); TpuaPowerInput.Parent = TpuaContainer; TpuaPowerInput.Size = UDim2.new(1, 0, 0, 25); TpuaPowerInput.Position = UDim2.new(0, 0, 0, 45); TpuaPowerInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45); TpuaPowerInput.TextColor3 = Color3.fromRGB(255, 255, 255); TpuaPowerInput.PlaceholderText = "TPUA Strength"; TpuaPowerInput.Text = tostring(defaultTpuaPower); TpuaPowerInput.Font = Enum.Font.SourceSansBold; TpuaPowerInput.TextSize = 14; local TPIcorner = Instance.new("UICorner"); TPIcorner.CornerRadius = UDim.new(0, 4); TPIcorner.Parent = TpuaPowerInput;
 local TeleportToPlayerBtn=createPurpleButton(pBtnContainer,"Teleport to",UDim2.new(1,0,0,35),UDim2.new())
 local FlingSelectedPlayerBtn = createPurpleButton(pBtnContainer, "Fling Selected", UDim2.new(1, 0, 0, 35), UDim2.new())
-local TeleportAllBtn = createPurpleButton(pBtnContainer,"Teleport to All",UDim2.new(1,0,0,35), UDim2.new())
+local TeleportAllBtn = createPurpleButton(pBtnContainer,"Track All",UDim2.new(1,0,0,35), UDim2.new())
 local WhitelistPlayerBtn=createPurpleButton(pBtnContainer,"Whitelist Player",UDim2.new(1,0,0,35),UDim2.new())
 local UnwhitelistPlayerBtn=createPurpleButton(pBtnContainer,"Un-Whitelist Player",UDim2.new(1,0,0,35),UDim2.new())
 local WhitelistTeamBtn=createPurpleButton(PlayersFrame,"Whitelist Team",UDim2.new(0,120,0,25),UDim2.new(0,10,0,435));
@@ -227,7 +228,63 @@ UnwhitelistPlayerBtn.MouseButton1Click:Connect(function() if selectedPlayer then
 WhitelistTeamBtn.MouseButton1Click:Connect(function() if selectedTeam then teamWhitelist[selectedTeam.Name]=true end end)
 UnwhitelistTeamBtn.MouseButton1Click:Connect(function() if selectedTeam then teamWhitelist[selectedTeam.Name]=nil end end)
 FlingPlayerBtn.MouseButton1Click:Connect(function() if walkflinging then unwalkfling_command() else walkfling_command(); coroutine.wrap(function() local oC = FlingPlayerBtn.BackgroundColor3; local fC = Color3.fromRGB(0,255,0); while walkflinging do FlingPlayerBtn.BackgroundColor3=fC;wait(0.2);FlingPlayerBtn.BackgroundColor3=oC;wait(0.2) end;FlingPlayerBtn.BackgroundColor3=oC end)() end end)
-TeleportAllBtn.MouseButton1Click:Connect(function() coroutine.wrap(function() if not getRoot(player.Character) then return end; local oC = getRoot(player.Character).CFrame; local oP = {}; for _,p in pairs(PlayersService:GetPlayers()) do if p~=player then table.insert(oP,p) end end; for _,tP in pairs(oP) do if getRoot(tP.Character) and getRoot(player.Character) then local tR = getRoot(tP.Character); getRoot(player.Character).CFrame = tR.CFrame*CFrame.new(0,5,0); wait(0.5) end end; if getRoot(player.Character) then getRoot(player.Character).CFrame = oC end end)() end)
+
+-- [[ MODIFIED TRACK ALL TOGGLE FUNCTION ]] --
+local originalTrackBtnColor = TeleportAllBtn.BackgroundColor3
+local activeTrackBtnColor = Color3.fromRGB(65, 90, 225) -- Blue color
+TeleportAllBtn.MouseButton1Click:Connect(function()
+    isTrackingAllActive = not isTrackingAllActive -- Toggle the state
+
+    if isTrackingAllActive then
+        TeleportAllBtn.BackgroundColor3 = activeTrackBtnColor
+        coroutine.wrap(function()
+            local myRoot = getRoot(player.Character)
+            if not myRoot then isTrackingAllActive = false; return end
+            
+            local originalCFrame = myRoot.CFrame
+            
+            while isTrackingAllActive do
+                local otherPlayers = {}
+                for _, p in pairs(PlayersService:GetPlayers()) do
+                    if p ~= player then table.insert(otherPlayers, p) end
+                end
+
+                if #otherPlayers == 0 then wait(1) else
+                    for _, targetPlayer in pairs(otherPlayers) do
+                        if not isTrackingAllActive then break end
+
+                        myRoot = getRoot(player.Character)
+                        local myHumanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                        local targetRoot = getRoot(targetPlayer.Character)
+                        
+                        if myRoot and myHumanoid and targetRoot then
+                            myRoot.CFrame = targetRoot.CFrame * CFrame.new(5, 0.5, 0)
+                            wait(1)
+                            
+                            local startTime = tick()
+                            while tick() - startTime < 3 and isTrackingAllActive do
+                                myRoot = getRoot(player.Character)
+                                targetRoot = getRoot(targetPlayer.Character)
+                                if not myRoot or not targetRoot then break end 
+
+                                myHumanoid:MoveTo(targetRoot.Position)
+                                RunService.Heartbeat:Wait()
+                            end
+                            if myHumanoid then myHumanoid:MoveTo(myRoot.Position) end
+                        end
+                    end
+                end
+                wait(0.1) -- Small delay before repeating the whole cycle
+            end
+            
+            -- When loop is finished (isTrackingAllActive is false)
+            TeleportAllBtn.BackgroundColor3 = originalTrackBtnColor
+            myRoot = getRoot(player.Character)
+            if myRoot then myRoot.CFrame = originalCFrame end
+        end)()
+    end
+end)
+
 TpuaButton.MouseButton1Click:Connect(function() if tpuaActive then stop_cataclysm_tpua(); TpuaButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0); else start_cataclysm_tpua(selectedPlayer); TpuaButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0); end end)
 VoiceChatUnbanButton.MouseButton1Click:Connect(function() pcall(function() game:GetService("VoiceChatService"):Join() end) end)
 
@@ -249,7 +306,41 @@ local isMainGuiVisible = false
 local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local positionOnScreen = UDim2.new(0.5, 0, 0.5, 0)
 local positionOffScreen = UDim2.new(0.5, 0, -1, 0)
+CloseButton.MouseButton1Click:Connect(function() V_ScreenGui:Destroy() end)
+
+-- [[ NEW AND IMPROVED TOGGLE BUTTON LOGIC ]] --
+local hasDragged = false
+local dragThreshold = 5
+clickDetector.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        hasDragged = false
+        local dragStart = input.Position
+        local startPosition = toggleButton.Position
+        
+        local moveConnection
+        moveConnection = UserInputService.InputChanged:Connect(function(uiInput)
+            if uiInput.UserInputType == input.UserInputType then
+                local delta = uiInput.Position - dragStart
+                if not hasDragged and delta.Magnitude > dragThreshold then
+                    hasDragged = true
+                end
+                toggleButton.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+            end
+        end)
+        
+        local endConnection
+        endConnection = input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                if moveConnection then moveConnection:Disconnect() end
+                if endConnection then endConnection:Disconnect() end
+            end
+        end)
+    end
+end)
+
 clickDetector.MouseButton1Click:Connect(function()
+    if hasDragged then return end
+    
     isMainGuiVisible = not isMainGuiVisible
     if isMainGuiVisible then
         local showTween = TweenService:Create(MainFrame, tweenInfo, {Position = positionOnScreen})
@@ -259,13 +350,12 @@ clickDetector.MouseButton1Click:Connect(function()
         hideTween:Play()
     end
 end)
-CloseButton.MouseButton1Click:Connect(function() V_ScreenGui:Destroy() end)
+
 
 -- =================================================================================
 -- == SECTION 6: INITIALIZATION
 -- =================================================================================
-MakeDraggable(MainFrame) -- Make the main window draggable
-MakeDraggable(toggleButton) -- Make the toggle button draggable
+MakeDraggable(MainFrame)
 
 -- Automatically load waypoints on start
 wait(0.5)
