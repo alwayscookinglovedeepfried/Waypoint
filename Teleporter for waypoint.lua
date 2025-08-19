@@ -26,9 +26,10 @@ local defaultWalkSpeed = 16
 local defaultJumpPower = 50
 local defaultFlingPower = 15000
 local defaultTpuaPower = 50000
+local defaultTrackTime = 3000 -- Default tracking time in milliseconds
 local tpuaActive = false
 local tpuaLoop = nil
-local isTrackingAllActive = false -- State for the new toggle button
+local isTrackingAllActive = false 
 
 -- =================================================================================
 -- == SECTION 2: CORE UTILITIES (DRAGGING)
@@ -118,7 +119,9 @@ local TpuaButton = Instance.new("TextButton"); TpuaButton.Name = "TpuaButton"; T
 local TpuaPowerInput = Instance.new("TextBox"); TpuaPowerInput.Parent = TpuaContainer; TpuaPowerInput.Size = UDim2.new(1, 0, 0, 25); TpuaPowerInput.Position = UDim2.new(0, 0, 0, 45); TpuaPowerInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45); TpuaPowerInput.TextColor3 = Color3.fromRGB(255, 255, 255); TpuaPowerInput.PlaceholderText = "TPUA Strength"; TpuaPowerInput.Text = tostring(defaultTpuaPower); TpuaPowerInput.Font = Enum.Font.SourceSansBold; TpuaPowerInput.TextSize = 14; local TPIcorner = Instance.new("UICorner"); TPIcorner.CornerRadius = UDim.new(0, 4); TPIcorner.Parent = TpuaPowerInput;
 local TeleportToPlayerBtn=createPurpleButton(pBtnContainer,"Teleport to",UDim2.new(1,0,0,35),UDim2.new())
 local FlingSelectedPlayerBtn = createPurpleButton(pBtnContainer, "Fling Selected", UDim2.new(1, 0, 0, 35), UDim2.new())
-local TeleportAllBtn = createPurpleButton(pBtnContainer,"Track All",UDim2.new(1,0,0,35), UDim2.new())
+local TrackContainer = Instance.new("Frame"); TrackContainer.Parent = pBtnContainer; TrackContainer.Size = UDim2.new(1,0,0,35); TrackContainer.BackgroundTransparency = 1;
+local TeleportAllBtn = createPurpleButton(TrackContainer,"Track All",UDim2.new(0.5, -5, 1, 0),UDim2.new(0,0,0,0))
+local TrackTimeInput = Instance.new("TextBox"); TrackTimeInput.Parent = TrackContainer; TrackTimeInput.Size = UDim2.new(0.5, -5, 1, 0); TrackTimeInput.Position = UDim2.new(0.5, 5, 0, 0); TrackTimeInput.BackgroundColor3 = Color3.fromRGB(45,45,45); TrackTimeInput.TextColor3 = Color3.fromRGB(255,255,255); TrackTimeInput.PlaceholderText = "Time (ms)"; TrackTimeInput.Text = tostring(defaultTrackTime); TrackTimeInput.Font = Enum.Font.SourceSansBold; TrackTimeInput.TextSize = 14; local TTIcorner = Instance.new("UICorner"); TTIcorner.CornerRadius = UDim.new(0, 4); TTIcorner.Parent = TrackTimeInput;
 local WhitelistPlayerBtn=createPurpleButton(pBtnContainer,"Whitelist Player",UDim2.new(1,0,0,35),UDim2.new())
 local UnwhitelistPlayerBtn=createPurpleButton(pBtnContainer,"Un-Whitelist Player",UDim2.new(1,0,0,35),UDim2.new())
 local WhitelistTeamBtn=createPurpleButton(PlayersFrame,"Whitelist Team",UDim2.new(0,120,0,25),UDim2.new(0,10,0,435));
@@ -233,15 +236,16 @@ FlingPlayerBtn.MouseButton1Click:Connect(function() if walkflinging then unwalkf
 local originalTrackBtnColor = TeleportAllBtn.BackgroundColor3
 local activeTrackBtnColor = Color3.fromRGB(65, 90, 225) -- Blue color
 TeleportAllBtn.MouseButton1Click:Connect(function()
-    isTrackingAllActive = not isTrackingAllActive -- Toggle the state
+    isTrackingAllActive = not isTrackingAllActive
 
     if isTrackingAllActive then
         TeleportAllBtn.BackgroundColor3 = activeTrackBtnColor
         coroutine.wrap(function()
             local myRoot = getRoot(player.Character)
-            if not myRoot then isTrackingAllActive = false; return end
+            if not myRoot then isTrackingAllActive = false; TeleportAllBtn.BackgroundColor3 = originalTrackBtnColor; return end
             
             local originalCFrame = myRoot.CFrame
+            local trackDurationSeconds = (tonumber(TrackTimeInput.Text) or defaultTrackTime) / 1000
             
             while isTrackingAllActive do
                 local otherPlayers = {}
@@ -253,16 +257,21 @@ TeleportAllBtn.MouseButton1Click:Connect(function()
                     for _, targetPlayer in pairs(otherPlayers) do
                         if not isTrackingAllActive then break end
 
-                        myRoot = getRoot(player.Character)
                         local myHumanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                        myRoot = getRoot(player.Character)
                         local targetRoot = getRoot(targetPlayer.Character)
                         
                         if myRoot and myHumanoid and targetRoot then
-                            myRoot.CFrame = targetRoot.CFrame * CFrame.new(5, 0.5, 0)
+                            myRoot.CFrame = targetRoot.CFrame * CFrame.new(5, 3, 0)
+                            
+                            if myHumanoid.Sit then
+                                myHumanoid.Jump = true
+                            end
+                            
                             wait(1)
                             
                             local startTime = tick()
-                            while tick() - startTime < 3 and isTrackingAllActive do
+                            while tick() - startTime < trackDurationSeconds and isTrackingAllActive do
                                 myRoot = getRoot(player.Character)
                                 targetRoot = getRoot(targetPlayer.Character)
                                 if not myRoot or not targetRoot then break end 
@@ -270,14 +279,13 @@ TeleportAllBtn.MouseButton1Click:Connect(function()
                                 myHumanoid:MoveTo(targetRoot.Position)
                                 RunService.Heartbeat:Wait()
                             end
-                            if myHumanoid then myHumanoid:MoveTo(myRoot.Position) end
+                            if myHumanoid and myRoot then myHumanoid:MoveTo(myRoot.Position) end
                         end
                     end
                 end
-                wait(0.1) -- Small delay before repeating the whole cycle
+                if isTrackingAllActive then task.wait(0.1) end
             end
             
-            -- When loop is finished (isTrackingAllActive is false)
             TeleportAllBtn.BackgroundColor3 = originalTrackBtnColor
             myRoot = getRoot(player.Character)
             if myRoot then myRoot.CFrame = originalCFrame end
